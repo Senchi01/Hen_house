@@ -8,7 +8,15 @@ target_include_directories(${ProjectName} PRIVATE
 
 target_link_libraries(${ProjectName} 
     pico_stdlib 
+    pico_multicore
     FreeRTOS-Kernel-Heap4 
+    hardware_adc
+    hardware_pwm
+    hardware_sync
+    hardware_gpio
     )
 
 pico_add_extra_outputs(${ProjectName})
+
+pico_enable_stdio_usb(${ProjectName} 1)
+pico_enable_stdio_uart(${ProjectName} 0)

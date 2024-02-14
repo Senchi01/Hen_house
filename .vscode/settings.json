@@ -1,0 +1,13 @@
+{
+  "files.associations": {
+    "*.java": "java",
+    "math.h": "c",
+    "multicore.h": "c",
+    "adc.h": "c",
+    "gpio.h": "c",
+    "sync.h": "c",
+    "stdlib.h": "c",
+    "pwm.h": "c",
+    "stdio.h": "c"
+  }
+}
