@@ -26,7 +26,6 @@ TaskHandle_t motorTaskHandle;
 
 volatile float currentTemperature = 0.0f;
 volatile float lightPercentage = 0.0f;
-bool motorActivated = false;
 
 void temt_6000_task(void *pvParameters)
 {
