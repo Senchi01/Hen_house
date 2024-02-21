@@ -8,23 +8,34 @@
 #include "hardware/sync.h"
 #include <math.h>
 
-#define NTC_THERM_PIN 28
-#define TEMT_6000_PIN 27
-#define LED_PIN3 15
-#define LED_PIN2 14
+// pins 
 #define LED_PIN1 13
+#define LED_PIN2 14
+#define HEAT_LAMP 15
 #define MOTOR_PIN1 16
 #define MOTOR_PIN2 17
-#define ADC_RESOLUTION 4095.0f
-#define ADC_CHANNEL_TEMT6000 1
-#define ADC_CHANNEL_NTC_THERM 2
+#define IR_SENSOR_PIN 18
+#define BUZZER_PIN 19
+#define IN_TEMP_PIN 26
+#define TEMT_6000_PIN 27
+#define OUT_TEMP_PIN 28
 
-TaskHandle_t ntcTaskHandle;
+// adc configuration
+#define ADC_RESOLUTION 4095.0f
+#define ADC_CHANNEL_IN_TEMP 0
+#define ADC_CHANNEL_TEMT6000 1
+#define ADC_CHANNEL_OUT_TEMP 2
+
+TaskHandle_t outTempTaskHandle;
+TaskHandle_t inTempTaskHandle;
 TaskHandle_t ledTaskHandle;
 TaskHandle_t lightTaskHandle;
 TaskHandle_t motorTaskHandle;
+TaskHandle_t motionTaskHandle;
 
-volatile float currentTemperature = 0.0f;
+
+volatile float currentOutTemperature = 0.0f;
+volatile float currentInTemperature = 0.0f;
 volatile float lightPercentage = 0.0f;
 
 void temt_6000_task(void *pvParameters)
@@ -75,16 +86,16 @@ void ledBlinkTask(void *pvParameters)
 
   while (1)
   {
-    if (lightPercentage > 60)
+    if (currentOutTemperature < 27 && currentInTemperature <= 30)
     {
-      led_on(LED_PIN2);
+      led_on(HEAT_LAMP);
+    }  else {
+      led_off(HEAT_LAMP);
     }
-    else
-    {
-      led_off(LED_PIN2);
-    }
+    
+    
 
-    vTaskDelay(pdMS_TO_TICKS(500)); // Wait for 1 second
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for 1 second
   }
 }
 
@@ -108,14 +119,14 @@ void motorTask(void *pvParameters)
             gpio_put(MOTOR_PIN2, 1); // Set the other motor pin high
             printf("Spinning motor counterclockwise for 1 second.\n");
         }
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Spin motor for 1 second
+        vTaskDelay(pdMS_TO_TICKS(500)); // Spin motor for 1 second
         gpio_put(MOTOR_PIN1, 0); // Turn off motor
         gpio_put(MOTOR_PIN2, 0);
         printf("Motor stopped.\n");
     }
 }
 
-void ntcTask(void *pvParameters)
+void outTemp(void *pvParameters)
 {
   (void)pvParameters;
 
@@ -126,8 +137,8 @@ void ntcTask(void *pvParameters)
 
   while (1)
   {
-    adc_gpio_init(NTC_THERM_PIN);
-    adc_select_input(ADC_CHANNEL_NTC_THERM); // NTC thermistor
+    adc_gpio_init(OUT_TEMP_PIN);
+    adc_select_input(ADC_CHANNEL_OUT_TEMP); // NTC thermistor
 
     uint16_t adc_value = adc_read();
     float voltage = (adc_value * 3.3f) / ADC_RESOLUTION; // Convert ADC value to voltage (in volts)
@@ -141,12 +152,77 @@ void ntcTask(void *pvParameters)
     // Convert the temperature to Celsius and Fahrenheit
     float temp_celsius = T - 273.15f;
 
-    currentTemperature = temp_celsius;
-    float temp_fahrenheit = (temp_celsius * 9 / 5) + 32;
-    printf("Resistance: %.2f Ohms, Temperature: %.2f°C (%.2f°F)\n", R2, temp_celsius, temp_fahrenheit);
+    currentOutTemperature = temp_celsius;
+    printf("OUT Temperature: %.2f°C\n",  temp_celsius);
     vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 2000 milliseconds
   }
 }
+void inTemp(void *pvParameters)
+{
+  (void)pvParameters;
+
+  // NTC thermistor parameters
+  float R1 = 10000.0f; // Resistance of the fixed resistor (in ohms)
+  float B = 3950.0f;   // NTC thermistor constant (Beta value)
+  float T0 = 298.15f;  // Reference temperature (25°C in Kelvin)
+
+  while (1)
+  {
+    adc_gpio_init(IN_TEMP_PIN);
+    adc_select_input(ADC_CHANNEL_IN_TEMP); // NTC thermistor
+
+    uint16_t adc_value = adc_read();
+    float voltage = (adc_value * 3.3f) / ADC_RESOLUTION; // Convert ADC value to voltage (in volts)
+
+    // Calculate the resistance of the NTC thermistor using the voltage divider equation
+    float R2 = (R1 * (3.3f - voltage)) / voltage;
+
+    // Calculate the temperature using the Steinhart-Hart equation
+    float T = 1.0f / (1.0f / T0 + log(R2 / R1) / B);
+
+    // Convert the temperature to Celsius and Fahrenheit
+    float temp_celsius = T - 273.15f;
+
+    currentInTemperature = temp_celsius;
+    printf("IN Temperature: %.2f°C\n",temp_celsius);
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 2000 milliseconds
+  }
+}
+
+
+void irSensTask(void *pvParameters) {
+
+
+    while (1) {
+        // The police light and siren effect only activates when the IR sensor is triggered
+        if(gpio_get(IR_SENSOR_PIN) == 0) { // Assuming the IR sensor outputs LOW when triggered
+            // Simulate "pii" sound
+            gpio_put(LED_PIN1, 1); // Turn the red part on
+            gpio_put(BUZZER_PIN, 1); // Turn the buzzer on
+            vTaskDelay(pdMS_TO_TICKS(150)); // Short delay for "pii"
+           
+            gpio_put(LED_PIN1, 0); // Turn the red part off
+            gpio_put(BUZZER_PIN, 0); // Turn the buzzer off
+            vTaskDelay(pdMS_TO_TICKS(100)); // Short pause between "pii" and "poo"
+           
+            // Simulate "poo" sound
+            gpio_put(LED_PIN2, 1); // Turn the blue part on
+            gpio_put(BUZZER_PIN, 1); // Turn the buzzer on again
+            vTaskDelay(pdMS_TO_TICKS(300)); // Longer delay for "poo"
+           
+            gpio_put(LED_PIN2, 0); // Turn the blue part off
+            gpio_put(BUZZER_PIN, 0); // Turn the buzzer off
+            vTaskDelay(pdMS_TO_TICKS(100)); // Short pause before repeating
+        } else {
+            // Ensure both LEDs and buzzer are off if the IR sensor is not triggered
+            gpio_put(LED_PIN1, 0);
+            gpio_put(LED_PIN2, 0);
+            gpio_put(BUZZER_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(100)); // Short delay to keep checking the sensor status
+        }
+    }
+}
+
 
 int main()
 {
@@ -155,14 +231,19 @@ int main()
 
   component_init(LED_PIN1, GPIO_OUT);
   component_init(LED_PIN2, GPIO_OUT);
-  component_init(LED_PIN3, GPIO_OUT);
+  component_init(HEAT_LAMP, GPIO_OUT);
   component_init(MOTOR_PIN1, GPIO_OUT);
   component_init(MOTOR_PIN2, GPIO_OUT);
+  component_init(BUZZER_PIN, GPIO_OUT);
+  component_init(IR_SENSOR_PIN, GPIO_IN);
 
-  xTaskCreate(ntcTask, "NTC Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, &ntcTaskHandle);
+
+  xTaskCreate(outTemp, "outTemp Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, &outTempTaskHandle);
+  xTaskCreate(inTemp, "inTemp Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, &inTempTaskHandle);
   xTaskCreate(ledBlinkTask, "LED Blink Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 4, &ledTaskHandle);
-  xTaskCreate(temt_6000_task, "light Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, &lightTaskHandle);
+  xTaskCreate(temt_6000_task, "light Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, &lightTaskHandle);
   xTaskCreate(motorTask, "Motor Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, &motorTaskHandle);
+  xTaskCreate(irSensTask, "Motion Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, &motionTaskHandle);
   vTaskStartScheduler();
   while (1)
   {
