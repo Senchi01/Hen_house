@@ -8,14 +8,15 @@
 #include "hardware/sync.h"
 #include <math.h>
 
-// pins 
+// pins
 #define LED_PIN1 13
 #define LED_PIN2 14
 #define HEAT_LAMP 15
 #define MOTOR_PIN1 16
 #define MOTOR_PIN2 17
-#define IR_SENSOR_PIN 18
-#define BUZZER_PIN 19
+#define IR_SENSOR_PIN 10
+#define BUZZER_PIN_L 19
+#define BUZZER_PIN_R 20
 #define IN_TEMP_PIN 26
 #define TEMT_6000_PIN 27
 #define OUT_TEMP_PIN 28
@@ -32,7 +33,6 @@ TaskHandle_t ledTaskHandle;
 TaskHandle_t lightTaskHandle;
 TaskHandle_t motorTaskHandle;
 TaskHandle_t motionTaskHandle;
-
 
 volatile float currentOutTemperature = 0.0f;
 volatile float currentInTemperature = 0.0f;
@@ -56,7 +56,7 @@ void temt_6000_task(void *pvParameters)
     {
       xTaskNotifyGive(motorTaskHandle); // Notify motor task when light percentage increases above 50%
     }
-    else if (prevLightPercentage > 50 && lightPercentage <= 50)
+    else if (prevLightPercentage > 40 && lightPercentage <= 40)
     {
       xTaskNotifyGive(motorTaskHandle); // Notify motor task when light percentage decreases below or equals 50%
     }
@@ -89,11 +89,11 @@ void ledBlinkTask(void *pvParameters)
     if (currentOutTemperature < 27 && currentInTemperature <= 30)
     {
       led_on(HEAT_LAMP);
-    }  else {
+    }
+    else
+    {
       led_off(HEAT_LAMP);
     }
-    
-    
 
     vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for 1 second
   }
@@ -101,29 +101,29 @@ void ledBlinkTask(void *pvParameters)
 
 void motorTask(void *pvParameters)
 {
-    (void)pvParameters;
+  (void)pvParameters;
 
-    while (1)
+  while (1)
+  {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notification
+
+    if (lightPercentage > 50) // If light percentage is higher than 50%
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notification
-
-        if (lightPercentage > 50) // If light percentage is higher than 50%
-        {
-            gpio_put(MOTOR_PIN1, 1); // Set one motor pin high
-            gpio_put(MOTOR_PIN2, 0); // Set the other motor pin low
-            printf("Spinning motor clockwise for 1 second.\n");
-        }
-        else // If light percentage is lower than or equal to 50%
-        {
-            gpio_put(MOTOR_PIN1, 0); // Set one motor pin low
-            gpio_put(MOTOR_PIN2, 1); // Set the other motor pin high
-            printf("Spinning motor counterclockwise for 1 second.\n");
-        }
-        vTaskDelay(pdMS_TO_TICKS(500)); // Spin motor for 1 second
-        gpio_put(MOTOR_PIN1, 0); // Turn off motor
-        gpio_put(MOTOR_PIN2, 0);
-        printf("Motor stopped.\n");
+      gpio_put(MOTOR_PIN1, 1); // Set one motor pin high
+      gpio_put(MOTOR_PIN2, 0); // Set the other motor pin low
+      printf("Spinning motor clockwise for 1 second.\n");
     }
+    else // If light percentage is lower than or equal to 50%
+    {
+      gpio_put(MOTOR_PIN1, 0); // Set one motor pin low
+      gpio_put(MOTOR_PIN2, 1); // Set the other motor pin high
+      printf("Spinning motor counterclockwise for 1 second.\n");
+    }
+    vTaskDelay(pdMS_TO_TICKS(500)); // Spin motor for 1 second
+    gpio_put(MOTOR_PIN1, 0);        // Turn off motor
+    gpio_put(MOTOR_PIN2, 0);
+    printf("Motor stopped.\n");
+  }
 }
 
 void outTemp(void *pvParameters)
@@ -153,7 +153,7 @@ void outTemp(void *pvParameters)
     float temp_celsius = T - 273.15f;
 
     currentOutTemperature = temp_celsius;
-    printf("OUT Temperature: %.2f°C\n",  temp_celsius);
+    printf("OUT Temperature: %.2f°C\n", temp_celsius);
     vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 2000 milliseconds
   }
 }
@@ -184,45 +184,54 @@ void inTemp(void *pvParameters)
     float temp_celsius = T - 273.15f;
 
     currentInTemperature = temp_celsius;
-    printf("IN Temperature: %.2f°C\n",temp_celsius);
+    printf("IN Temperature: %.2f°C\n", temp_celsius);
     vTaskDelay(pdMS_TO_TICKS(2000)); // Delay for 2000 milliseconds
   }
 }
 
+void irSensTask(void *pvParameters)
+{
 
-void irSensTask(void *pvParameters) {
+  while (1)
+  {
+    // The police light and siren effect only activates when the IR sensor is triggered
+    if (gpio_get(IR_SENSOR_PIN) == 0)
+    { // Assuming the IR sensor outputs LOW when triggered
+      // Simulate "pii" sound
+      printf("motionnn\n");
 
+      gpio_put(LED_PIN1, 1);          // Turn the red part on
+      gpio_put(BUZZER_PIN_L, 1);      // Turn the buzzer on
+      gpio_put(BUZZER_PIN_R, 1);      // Turn the buzzer on
+      vTaskDelay(pdMS_TO_TICKS(150)); // Short delay for "pii"
 
-    while (1) {
-        // The police light and siren effect only activates when the IR sensor is triggered
-        if(gpio_get(IR_SENSOR_PIN) == 0) { // Assuming the IR sensor outputs LOW when triggered
-            // Simulate "pii" sound
-            gpio_put(LED_PIN1, 1); // Turn the red part on
-            gpio_put(BUZZER_PIN, 1); // Turn the buzzer on
-            vTaskDelay(pdMS_TO_TICKS(150)); // Short delay for "pii"
-           
-            gpio_put(LED_PIN1, 0); // Turn the red part off
-            gpio_put(BUZZER_PIN, 0); // Turn the buzzer off
-            vTaskDelay(pdMS_TO_TICKS(100)); // Short pause between "pii" and "poo"
-           
-            // Simulate "poo" sound
-            gpio_put(LED_PIN2, 1); // Turn the blue part on
-            gpio_put(BUZZER_PIN, 1); // Turn the buzzer on again
-            vTaskDelay(pdMS_TO_TICKS(300)); // Longer delay for "poo"
-           
-            gpio_put(LED_PIN2, 0); // Turn the blue part off
-            gpio_put(BUZZER_PIN, 0); // Turn the buzzer off
-            vTaskDelay(pdMS_TO_TICKS(100)); // Short pause before repeating
-        } else {
-            // Ensure both LEDs and buzzer are off if the IR sensor is not triggered
-            gpio_put(LED_PIN1, 0);
-            gpio_put(LED_PIN2, 0);
-            gpio_put(BUZZER_PIN, 0);
-            vTaskDelay(pdMS_TO_TICKS(100)); // Short delay to keep checking the sensor status
-        }
+      gpio_put(LED_PIN1, 0); // Turn the red part off
+      gpio_put(BUZZER_PIN_L, 0);
+      gpio_put(BUZZER_PIN_R, 0);      // Turn the buzzer off
+      vTaskDelay(pdMS_TO_TICKS(100)); // Short pause between "pii" and "poo"
+
+      // Simulate "poo" sound
+      gpio_put(LED_PIN2, 1); // Turn the blue part on
+      gpio_put(BUZZER_PIN_L, 1);
+      gpio_put(BUZZER_PIN_R, 1);      // Turn the buzzer on again
+      vTaskDelay(pdMS_TO_TICKS(300)); // Longer delay for "poo"
+
+      gpio_put(LED_PIN2, 0); // Turn the blue part off
+      gpio_put(BUZZER_PIN_L, 0);
+      gpio_put(BUZZER_PIN_R, 0);
+      vTaskDelay(pdMS_TO_TICKS(100)); // Short pause before repeating
     }
+    else
+    {
+      // Ensure both LEDs and buzzer are off if the IR sensor is not triggered
+      gpio_put(LED_PIN1, 0);
+      gpio_put(LED_PIN2, 0);
+      gpio_put(BUZZER_PIN_L, 0);
+      gpio_put(BUZZER_PIN_R, 0);
+      vTaskDelay(pdMS_TO_TICKS(100)); // Short delay to keep checking the sensor status
+    }
+  }
 }
-
 
 int main()
 {
@@ -234,9 +243,9 @@ int main()
   component_init(HEAT_LAMP, GPIO_OUT);
   component_init(MOTOR_PIN1, GPIO_OUT);
   component_init(MOTOR_PIN2, GPIO_OUT);
-  component_init(BUZZER_PIN, GPIO_OUT);
+  component_init(BUZZER_PIN_L, GPIO_OUT);
+  component_init(BUZZER_PIN_R, GPIO_OUT);
   component_init(IR_SENSOR_PIN, GPIO_IN);
-
 
   xTaskCreate(outTemp, "outTemp Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, &outTempTaskHandle);
   xTaskCreate(inTemp, "inTemp Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, &inTempTaskHandle);
